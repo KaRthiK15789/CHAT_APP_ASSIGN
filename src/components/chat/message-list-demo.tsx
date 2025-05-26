@@ -20,55 +20,41 @@ export default function MessageListDemo({ chatId, currentUser }: MessageListDemo
       setMessages([])
       return
     }
-
-    const chatMessages = getDemoMessagesForChat(chatId)
-    setMessages(chatMessages)
+    const fetchedMessages = getDemoMessagesForChat(chatId)
+    setMessages(fetchedMessages)
   }, [chatId])
 
   useEffect(() => {
-    // Scroll to bottom when new messages arrive
     if (scrollAreaRef.current) {
-      const scrollContainer = scrollAreaRef.current.querySelector('[data-radix-scroll-area-viewport]')
-      if (scrollContainer) {
-        scrollContainer.scrollTop = scrollContainer.scrollHeight
+      const viewport = scrollAreaRef.current.querySelector('[data-radix-scroll-area-viewport]')
+      if (viewport) {
+        viewport.scrollTop = viewport.scrollHeight
       }
     }
   }, [messages])
 
   const formatMessageTime = (timestamp: string) => {
     const date = new Date(timestamp)
-
-    if (isToday(date)) {
-      return format(date, 'HH:mm')
-    }
-    if (isYesterday(date)) {
-      return `Yesterday ${format(date, 'HH:mm')}`
-    }
+    if (isToday(date)) return format(date, 'HH:mm')
+    if (isYesterday(date)) return `Yesterday ${format(date, 'HH:mm')}`
     return format(date, 'MMM d, HH:mm')
   }
 
-  const groupMessagesByDate = (messages: DemoMessage[]) => {
-    const groups: { [key: string]: DemoMessage[] } = {}
+  const groupMessagesByDate = (msgs: DemoMessage[]) => {
+    const grouped: Record<string, DemoMessage[]> = {}
 
-    for (const message of messages) {
-      const date = new Date(message.created_at)
-      let dateKey: string
+    for (const msg of msgs) {
+      const date = new Date(msg.created_at)
+      const key = isToday(date)
+        ? 'Today'
+        : isYesterday(date)
+        ? 'Yesterday'
+        : format(date, 'MMMM d, yyyy')
 
-      if (isToday(date)) {
-        dateKey = 'Today'
-      } else if (isYesterday(date)) {
-        dateKey = 'Yesterday'
-      } else {
-        dateKey = format(date, 'MMMM d, yyyy')
-      }
-
-      if (!groups[dateKey]) {
-        groups[dateKey] = []
-      }
-      groups[dateKey].push(message)
+      if (!grouped[key]) grouped[key] = []
+      grouped[key].push(msg)
     }
-
-    return groups
+    return grouped
   }
 
   if (!chatId) {
@@ -90,21 +76,18 @@ export default function MessageListDemo({ chatId, currentUser }: MessageListDemo
       <div className="p-4">
         {Object.entries(messageGroups).map(([date, dateMessages]) => (
           <div key={date}>
-            {/* Date separator */}
             <div className="flex items-center justify-center my-4">
               <div className="bg-white px-3 py-1 rounded-full text-xs text-gray-500 shadow-sm border">
                 {date}
               </div>
             </div>
 
-            {/* Messages for this date */}
             {dateMessages.map((message, index) => {
               const isCurrentUser = message.user_id === currentUser?.id
-              const showAvatar = !isCurrentUser && (
-                index === 0 ||
-                dateMessages[index - 1]?.user_id !== message.user_id
-              )
-              const showUsername = !isCurrentUser && showAvatar
+              const showAvatar =
+                !isCurrentUser &&
+                (index === 0 || dateMessages[index - 1]?.user_id !== message.user_id)
+              const showUsername = showAvatar
 
               return (
                 <div
@@ -115,7 +98,7 @@ export default function MessageListDemo({ chatId, currentUser }: MessageListDemo
                     <div className="mr-3">
                       {showAvatar ? (
                         <Avatar className="h-8 w-8">
-                          <AvatarImage src={message.user.avatar_url || undefined} />
+                          <AvatarImage src={message.user.avatar_url || ''} />
                           <AvatarFallback>
                             {message.user.username.slice(0, 2).toUpperCase()}
                           </AvatarFallback>
@@ -128,12 +111,14 @@ export default function MessageListDemo({ chatId, currentUser }: MessageListDemo
 
                   <div className={`max-w-xs lg:max-w-md ${isCurrentUser ? 'order-1' : ''}`}>
                     {showUsername && (
-                      <p className={`text-xs mb-1 ml-3 font-medium ${
-                        message.user.username.toLowerCase().includes('periskope') ||
-                        message.user.username.toLowerCase().includes('system')
-                          ? 'text-green-600'
-                          : 'text-gray-500'
-                      }`}>
+                      <p
+                        className={`text-xs mb-1 ml-3 font-medium ${
+                          message.user.username.toLowerCase().includes('periskope') ||
+                          message.user.username.toLowerCase().includes('system')
+                            ? 'text-green-600'
+                            : 'text-gray-500'
+                        }`}
+                      >
                         {message.user.username}
                         {(message.user.username.toLowerCase().includes('periskope') ||
                           message.user.username.toLowerCase().includes('system')) && (
@@ -153,14 +138,12 @@ export default function MessageListDemo({ chatId, currentUser }: MessageListDemo
                     >
                       <p className="text-sm whitespace-pre-wrap">{message.content}</p>
 
-                      {/* Message status indicators for sent messages */}
                       {isCurrentUser && (
                         <div className="flex items-center justify-end mt-1 space-x-1">
                           <span className="text-xs opacity-70">
                             {formatMessageTime(message.created_at)}
                           </span>
                           <div className="flex">
-                            {/* Double checkmark for delivered/read */}
                             <svg className="w-3 h-3 text-blue-200" fill="currentColor" viewBox="0 0 20 20">
                               <path d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"/>
                             </svg>
@@ -182,7 +165,7 @@ export default function MessageListDemo({ chatId, currentUser }: MessageListDemo
                   {isCurrentUser && (
                     <div className="ml-3">
                       <Avatar className="h-8 w-8">
-                        <AvatarImage src={currentUser?.avatar_url || undefined} />
+                        <AvatarImage src={currentUser?.avatar_url || ''} />
                         <AvatarFallback>
                           {currentUser?.username.slice(0, 2).toUpperCase()}
                         </AvatarFallback>
