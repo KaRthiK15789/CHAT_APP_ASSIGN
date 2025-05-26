@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -20,8 +20,18 @@ import {
 import { createClientSupabaseClient } from '@/lib/supabase'
 import type { Database } from '@/lib/database.types'
 
+type User = Database['public']['Tables']['users']['Row']
+
+type ChatMember = {
+  user_id: string
+  users: {
+    username: string
+    avatar_url?: string
+  }
+}
+
 type Chat = Database['public']['Tables']['chats']['Row'] & {
-  members?: Database['public']['Tables']['users']['Row'][]
+  chat_members?: ChatMember[]
   last_message?: {
     content: string
     created_at: string
@@ -33,7 +43,7 @@ type Chat = Database['public']['Tables']['chats']['Row'] & {
 interface ChatSidebarProps {
   selectedChatId: string | null
   onChatSelect: (chatId: string) => void
-  currentUser: Database['public']['Tables']['users']['Row'] | null
+  currentUser: User | null
 }
 
 export default function ChatSidebar({ selectedChatId, onChatSelect, currentUser }: ChatSidebarProps) {
@@ -42,24 +52,7 @@ export default function ChatSidebar({ selectedChatId, onChatSelect, currentUser 
   const [filterType, setFilterType] = useState<'all' | 'direct' | 'group'>('all')
   const supabase = createClientSupabaseClient()
 
-  useEffect(() => {
-    if (!currentUser) return
-
-    fetchChats()
-
-    // Subscribe to chat updates
-    const channel = supabase.channel('chat-updates')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'chats' }, () => {
-        fetchChats()
-      })
-      .subscribe()
-
-    return () => {
-      supabase.removeChannel(channel)
-    }
-  }, [currentUser])
-
-  const fetchChats = async () => {
+  const fetchChats = useCallback(async () => {
     if (!currentUser) return
 
     try {
@@ -83,7 +76,6 @@ export default function ChatSidebar({ selectedChatId, onChatSelect, currentUser 
       const chatIds = chatMembers?.map(cm => cm.chat_id) || []
 
       if (chatIds.length > 0) {
-        // Get chat details with members and last messages
         const { data: chatDetails } = await supabase
           .from('chats')
           .select(`
@@ -101,10 +93,25 @@ export default function ChatSidebar({ selectedChatId, onChatSelect, currentUser 
     } catch (error) {
       console.error('Error fetching chats:', error)
     }
-  }
+  }, [currentUser, supabase])
+
+  useEffect(() => {
+    if (!currentUser) return
+
+    fetchChats()
+
+    const channel = supabase.channel('chat-updates')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'chats' }, () => {
+        fetchChats()
+      })
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [currentUser, fetchChats, supabase])
 
   const createNewChat = async () => {
-    // This would open a modal to create a new chat
     console.log('Create new chat')
   }
 
@@ -115,16 +122,13 @@ export default function ChatSidebar({ selectedChatId, onChatSelect, currentUser 
   })
 
   const getChatDisplayName = (chat: Chat) => {
-    if (chat.type === 'group') {
-      return chat.name
-    }
-    // For direct chats, show the other user's name
-    const otherMember = chat.chat_members?.find((member: any) => member.user_id !== currentUser?.id)
+    if (chat.type === 'group') return chat.name
+    const otherMember = chat.chat_members?.find((member: ChatMember) => member.user_id !== currentUser?.id)
     return otherMember?.users?.username || chat.name
   }
 
   const getChatTags = (chat: Chat) => {
-    const tags = []
+    const tags: string[] = []
     if (chat.name.toLowerCase().includes('demo')) tags.push('Demo')
     if (chat.name.toLowerCase().includes('internal')) tags.push('Internal')
     if (chat.name.toLowerCase().includes('signup')) tags.push('Signup')
@@ -145,16 +149,13 @@ export default function ChatSidebar({ selectedChatId, onChatSelect, currentUser 
   }
 
   const getChatAvatar = (chat: Chat) => {
-    if (chat.type === 'group') {
-      return null // Use default group avatar
-    }
-    const otherMember = chat.chat_members?.find((member: any) => member.user_id !== currentUser?.id)
+    if (chat.type === 'group') return null
+    const otherMember = chat.chat_members?.find((member: ChatMember) => member.user_id !== currentUser?.id)
     return otherMember?.users?.avatar_url
   }
 
   return (
     <div className="w-80 bg-white border-r border-gray-200 flex flex-col h-full">
-      {/* Header */}
       <div className="p-4 border-b border-gray-200">
         <div className="flex items-center justify-between mb-4">
           <h1 className="text-xl font-semibold text-gray-900">Chats</h1>
@@ -168,7 +169,6 @@ export default function ChatSidebar({ selectedChatId, onChatSelect, currentUser 
           </div>
         </div>
 
-        {/* Search */}
         <div className="relative mb-3">
           <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
           <Input
@@ -179,7 +179,6 @@ export default function ChatSidebar({ selectedChatId, onChatSelect, currentUser 
           />
         </div>
 
-        {/* Filters */}
         <div className="flex space-x-2">
           <Button
             variant={filterType === 'all' ? 'default' : 'outline'}
@@ -210,7 +209,6 @@ export default function ChatSidebar({ selectedChatId, onChatSelect, currentUser 
         </div>
       </div>
 
-      {/* Chat List */}
       <ScrollArea className="flex-1">
         <div className="p-2">
           {filteredChats.map((chat) => (
@@ -260,7 +258,6 @@ export default function ChatSidebar({ selectedChatId, onChatSelect, currentUser 
                     {chat.last_message ? chat.last_message.content : 'No messages yet'}
                   </p>
 
-                  {/* Chat tags */}
                   {getChatTags(chat).length > 0 && (
                     <div className="flex flex-wrap gap-1 mt-1">
                       {getChatTags(chat).map((tag) => (
@@ -279,8 +276,7 @@ export default function ChatSidebar({ selectedChatId, onChatSelect, currentUser 
                     <span className="text-xs text-gray-400">
                       {chat.last_message
                         ? new Date(chat.last_message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                        : new Date(chat.created_at).toLocaleDateString()
-                      }
+                        : new Date(chat.created_at).toLocaleDateString()}
                     </span>
                     {chat.type === 'group' && (
                       <div className="flex items-center text-xs text-gray-400">
